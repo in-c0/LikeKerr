@@ -23,6 +23,14 @@ export interface WorkloadRequest {
   inclinePct: number;
 }
 
+export interface WorkloadControllerConfig {
+  minSpeedKph: number;
+  maxSpeedKph: number;
+  effortSpeedRangeKph: number;
+  hrFeedbackGainKphPerBpm: number;
+  inclinePct: number;
+}
+
 export interface SafetyEnvelope {
   maxSpeedKph: number;
   maxInclinePct: number;
@@ -121,6 +129,26 @@ export function movingAverage(values: readonly number[], window: number): number
   }
 
   return result;
+}
+
+export function requestWorkload(
+  target: TargetHrFrame,
+  actualHrBpm: number,
+  config: WorkloadControllerConfig,
+): WorkloadRequest {
+  if (config.maxSpeedKph < config.minSpeedKph) {
+    throw new Error("maxSpeedKph must be >= minSpeedKph");
+  }
+
+  const feedForwardSpeed =
+    config.minSpeedKph + target.scaledEffort01 * Math.max(0, config.effortSpeedRangeKph);
+  const hrErrorBpm = target.targetHrBpm - actualHrBpm;
+  const feedbackCorrection = hrErrorBpm * config.hrFeedbackGainKphPerBpm;
+
+  return {
+    speedKph: clamp(feedForwardSpeed + feedbackCorrection, 0, config.maxSpeedKph),
+    inclinePct: Math.max(0, config.inclinePct),
+  };
 }
 
 export function applySafetyGuard(
