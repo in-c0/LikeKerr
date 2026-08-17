@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p packages/control-core/tsconfig.json",
-    "test": "npm run build && node packages/control-core/dist/scripts/smoke.js && node packages/control-core/dist/scripts/ble-smoke.js && node packages/control-core/dist/scripts/ftms-smoke.js && node packages/control-core/dist/scripts/sync-safety-smoke.js && node apps/mobile/prototype-server.mjs --self-test",
+    "test": "npm run build && node packages/control-core/dist/scripts/smoke.js && node packages/control-core/dist/scripts/ble-smoke.js && node packages/control-core/dist/scripts/ftms-smoke.js && node packages/control-core/dist/scripts/sync-safety-smoke.js && node apps/mobile/prototype-server.mjs --self-test && node scripts/verify-xr-boundary.mjs",
     "sim": "npm run build && node packages/control-core/dist/scripts/session-sim.js",
     "demo:accessible": "npm run build && node apps/mobile/prototype-server.mjs",
     "demo:xr": "npm run build && node apps/mobile/lan-proxy.mjs",
