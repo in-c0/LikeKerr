@@ -2,6 +2,7 @@ import {
   TreadmillSimulator,
   applySafetyGuard,
   planTargetHr,
+  requestWorkload,
   scoreHrSync,
   type AthleteCalibration,
   type SafetyEnvelope,
@@ -22,6 +23,16 @@ assert(Math.abs(target.scaledEffort01 - 0.6) < 1e-9, "80% intensity should scale
 assert(Math.abs(target.targetHrBpm - 138) < 1e-9, "target HR should use HR reserve");
 assert(scoreHrSync(150, 150, athlete) === 100, "exact HR match should score 100");
 assert(scoreHrSync(190, 60, athlete) === 0, "full reserve error should score 0");
+
+const workload = requestWorkload(target, 128, {
+  minSpeedKph: 4,
+  maxSpeedKph: 18,
+  effortSpeedRangeKph: 10,
+  hrFeedbackGainKphPerBpm: 0.1,
+  inclinePct: 1,
+});
+assert(Math.abs(workload.speedKph - 11) < 1e-9, "workload should combine effort feed-forward and HR feedback");
+assert(workload.inclinePct === 1, "workload should carry configured incline");
 
 const envelope: SafetyEnvelope = {
   maxSpeedKph: 18,
