@@ -1,5 +1,7 @@
 # LikeKerr
 
+[![control-core](https://github.com/in-c0/LikeKerr/actions/workflows/ci.yml/badge.svg)](https://github.com/in-c0/LikeKerr/actions/workflows/ci.yml)
+
 **Run fast, like your favourite soccer player.**
 
 LikeKerr turns a recorded footballer's match workload into a personalised, HR-synchronised treadmill training experience.
