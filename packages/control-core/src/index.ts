@@ -6,9 +6,82 @@ export interface AthleteCalibration {
   adaptiveScale?: number;
 }
 
+export interface HeartRateSample {
+  tMs: number;
+  bpm: number;
+  connected: boolean;
+}
+
+export interface HeartRateSource {
+  readonly connected: boolean;
+  connect(): void | Promise<void>;
+  disconnect(): void | Promise<void>;
+  sample(tMs: number): HeartRateSample | null;
+}
+
+export class HeartRateSimulator implements HeartRateSource {
+  connected = false;
+  private readonly samples: readonly HeartRateSample[];
+
+  constructor(samples: readonly Omit<HeartRateSample, "connected">[]) {
+    this.samples = [...samples]
+      .sort((a, b) => a.tMs - b.tMs)
+      .map((sample) => ({ ...sample, connected: true }));
+  }
+
+  connect(): void {
+    this.connected = true;
+  }
+
+  disconnect(): void {
+    this.connected = false;
+  }
+
+  sample(tMs: number): HeartRateSample | null {
+    if (!this.connected || !Number.isFinite(tMs)) return null;
+
+    let match: HeartRateSample | null = null;
+    for (const sample of this.samples) {
+      if (sample.tMs > tMs) break;
+      match = sample;
+    }
+    return match ? { ...match, connected: true } : null;
+  }
+}
+
 export interface PlayerEffortFrame {
   tMs: number;
   effort01: number;
+}
+
+export interface PlayerTracePoint extends PlayerEffortFrame {
+  xM: number;
+  yM: number;
+  speedMps: number;
+  accelMps2: number;
+}
+
+export interface PlayerTraceSource {
+  sample(tMs: number): PlayerTracePoint | null;
+}
+
+export class ArrayPlayerTraceSource implements PlayerTraceSource {
+  private readonly points: readonly PlayerTracePoint[];
+
+  constructor(points: readonly PlayerTracePoint[]) {
+    this.points = [...points].sort((a, b) => a.tMs - b.tMs);
+  }
+
+  sample(tMs: number): PlayerTracePoint | null {
+    if (!Number.isFinite(tMs)) return null;
+
+    let match: PlayerTracePoint | null = null;
+    for (const point of this.points) {
+      if (point.tMs > tMs) break;
+      match = point;
+    }
+    return match ? { ...match } : null;
+  }
 }
 
 export interface TargetHrFrame {
@@ -19,6 +92,7 @@ export interface TargetHrFrame {
 }
 
 export interface WorkloadRequest {
+  tMs: number;
   speedKph: number;
   inclinePct: number;
 }
@@ -31,14 +105,81 @@ export interface WorkloadControllerConfig {
   inclinePct: number;
 }
 
+export interface HrSyncConfig {
+  smoothingWindowSamples: number;
+  lagSamples: number;
+  currentWindowSamples: number;
+}
+
+export interface HrSyncSnapshot {
+  currentSync: number | null;
+  sessionSync: number | null;
+  validSamples: number;
+}
+
+export class HrSyncTracker {
+  private readonly targetHistory: number[] = [];
+  private readonly actualHistory: number[] = [];
+  private readonly scores: number[] = [];
+
+  constructor(
+    private readonly calibration: AthleteCalibration,
+    private readonly config: HrSyncConfig,
+  ) {
+    if (!Number.isInteger(config.smoothingWindowSamples) || config.smoothingWindowSamples <= 0) {
+      throw new Error("smoothingWindowSamples must be a positive integer");
+    }
+    if (!Number.isInteger(config.lagSamples) || config.lagSamples < 0) {
+      throw new Error("lagSamples must be a non-negative integer");
+    }
+    if (!Number.isInteger(config.currentWindowSamples) || config.currentWindowSamples <= 0) {
+      throw new Error("currentWindowSamples must be a positive integer");
+    }
+  }
+
+  push(targetHrBpm: number, actualHrBpm: number): HrSyncSnapshot {
+    if (!Number.isFinite(targetHrBpm) || !Number.isFinite(actualHrBpm)) {
+      throw new Error("HR samples must be finite");
+    }
+
+    this.targetHistory.push(targetHrBpm);
+    this.actualHistory.push(actualHrBpm);
+
+    const index = this.actualHistory.length - 1;
+    const targetIndex = index - this.config.lagSamples;
+    if (targetIndex >= 0) {
+      const smoothedTarget = trailingMean(
+        this.targetHistory,
+        targetIndex,
+        this.config.smoothingWindowSamples,
+      );
+      const smoothedActual = trailingMean(
+        this.actualHistory,
+        index,
+        this.config.smoothingWindowSamples,
+      );
+      this.scores.push(scoreHrSync(smoothedTarget, smoothedActual, this.calibration));
+    }
+
+    const recent = this.scores.slice(-this.config.currentWindowSamples);
+    return {
+      currentSync: recent.length > 0 ? mean(recent) : null,
+      sessionSync: this.scores.length > 0 ? mean(this.scores) : null,
+      validSamples: this.scores.length,
+    };
+  }
+}
+
 export interface SafetyEnvelope {
   maxSpeedKph: number;
   maxInclinePct: number;
   maxAccelerationKphPerSec: number;
   recoverySpeedKph: number;
+  maxCommandAgeMs: number;
 }
 
 export interface SafetyState {
+  nowMs: number;
   dtSec: number;
   currentSpeedKph: number;
   hrFresh: boolean;
@@ -57,8 +198,31 @@ export interface TreadmillCapabilities {
   maxAccelerationKphPerSec: number;
 }
 
+export interface TreadmillCommandLogEntry {
+  command: WorkloadRequest;
+  accepted: boolean;
+  reason: string | null;
+  resultingSpeedKph: number;
+  resultingInclinePct: number;
+}
+
+export interface TreadmillAdapter {
+  readonly capabilities: TreadmillCapabilities;
+  readonly connected: boolean;
+  apply(command: WorkloadRequest, dtSec: number): boolean;
+  stop(tMs: number): void;
+}
+
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
+
+const mean = (values: readonly number[]): number =>
+  values.reduce((sum, value) => sum + value, 0) / values.length;
+
+function trailingMean(values: readonly number[], endIndex: number, window: number): number {
+  const start = Math.max(0, endIndex - window + 1);
+  return mean(values.slice(start, endIndex + 1));
+}
 
 function intensityScale(intensity: Intensity, calibration: AthleteCalibration): number {
   if (intensity === "adaptive") {
@@ -115,20 +279,7 @@ export function movingAverage(values: readonly number[], window: number): number
     throw new Error("window must be a positive integer");
   }
 
-  const result: number[] = [];
-  let sum = 0;
-  const queue: number[] = [];
-
-  for (const value of values) {
-    queue.push(value);
-    sum += value;
-    if (queue.length > window) {
-      sum -= queue.shift()!;
-    }
-    result.push(sum / queue.length);
-  }
-
-  return result;
+  return values.map((_, index) => trailingMean(values, index, window));
 }
 
 export function requestWorkload(
@@ -146,6 +297,7 @@ export function requestWorkload(
   const feedbackCorrection = hrErrorBpm * config.hrFeedbackGainKphPerBpm;
 
   return {
+    tMs: target.tMs,
     speedKph: clamp(feedForwardSpeed + feedbackCorrection, 0, config.maxSpeedKph),
     inclinePct: Math.max(0, config.inclinePct),
   };
@@ -156,18 +308,42 @@ export function applySafetyGuard(
   state: SafetyState,
   envelope: SafetyEnvelope,
 ): SafeWorkloadCommand {
-  const reasons: string[] = [];
-
   if (state.userStop) {
-    return { speedKph: 0, inclinePct: 0, limited: true, reasons: ["user-stop"] };
+    return { ...request, speedKph: 0, inclinePct: 0, limited: true, reasons: ["user-stop"] };
   }
 
   if (!state.treadmillConnected) {
-    return { speedKph: 0, inclinePct: 0, limited: true, reasons: ["treadmill-disconnected"] };
+    return {
+      ...request,
+      speedKph: 0,
+      inclinePct: 0,
+      limited: true,
+      reasons: ["treadmill-disconnected"],
+    };
   }
 
+  if (
+    !Number.isFinite(request.tMs) ||
+    !Number.isFinite(request.speedKph) ||
+    !Number.isFinite(request.inclinePct)
+  ) {
+    return { ...request, speedKph: 0, inclinePct: 0, limited: true, reasons: ["invalid-command"] };
+  }
+
+  const commandAgeMs = state.nowMs - request.tMs;
+  if (!Number.isFinite(commandAgeMs) || commandAgeMs < 0 || commandAgeMs > envelope.maxCommandAgeMs) {
+    return {
+      ...request,
+      speedKph: 0,
+      inclinePct: 0,
+      limited: true,
+      reasons: ["stale-controller-command"],
+    };
+  }
+
+  const reasons: string[] = [];
   let desiredSpeed = request.speedKph;
-  let desiredIncline = request.inclinePct;
+  const desiredIncline = request.inclinePct;
 
   if (!state.hrFresh) {
     desiredSpeed = Math.min(desiredSpeed, envelope.recoverySpeedKph);
@@ -187,6 +363,7 @@ export function applySafetyGuard(
   if (slewLimitedSpeed !== cappedSpeed) reasons.push("acceleration-envelope");
 
   return {
+    ...request,
     speedKph: slewLimitedSpeed,
     inclinePct: cappedIncline,
     limited: reasons.length > 0,
@@ -194,15 +371,13 @@ export function applySafetyGuard(
   };
 }
 
-export class TreadmillSimulator {
-  readonly capabilities: TreadmillCapabilities;
+export class TreadmillSimulator implements TreadmillAdapter {
+  readonly commandLog: TreadmillCommandLogEntry[] = [];
   speedKph = 0;
   inclinePct = 0;
   connected = true;
 
-  constructor(capabilities: TreadmillCapabilities) {
-    this.capabilities = capabilities;
-  }
+  constructor(readonly capabilities: TreadmillCapabilities) {}
 
   disconnect(): void {
     this.connected = false;
@@ -212,15 +387,64 @@ export class TreadmillSimulator {
     this.connected = true;
   }
 
-  apply(command: WorkloadRequest, dtSec: number): void {
-    if (!this.connected) return;
+  apply(command: WorkloadRequest, dtSec: number): boolean {
+    const valid =
+      Number.isFinite(command.tMs) &&
+      Number.isFinite(command.speedKph) &&
+      Number.isFinite(command.inclinePct) &&
+      Number.isFinite(dtSec) &&
+      dtSec >= 0;
 
-    const maxDelta = this.capabilities.maxAccelerationKphPerSec * Math.max(0, dtSec);
+    if (!this.connected || !valid) {
+      if (valid && !this.connected) {
+        this.commandLog.push({
+          command: { ...command },
+          accepted: false,
+          reason: "disconnected",
+          resultingSpeedKph: this.speedKph,
+          resultingInclinePct: this.inclinePct,
+        });
+      } else {
+        this.speedKph = 0;
+        this.inclinePct = 0;
+        this.commandLog.push({
+          command: { ...command },
+          accepted: false,
+          reason: "invalid-command",
+          resultingSpeedKph: 0,
+          resultingInclinePct: 0,
+        });
+      }
+      return false;
+    }
+
+    const maxDelta = this.capabilities.maxAccelerationKphPerSec * dtSec;
     this.speedKph = clamp(
       command.speedKph,
       Math.max(0, this.speedKph - maxDelta),
       Math.min(this.capabilities.maxSpeedKph, this.speedKph + maxDelta),
     );
     this.inclinePct = clamp(command.inclinePct, 0, this.capabilities.maxInclinePct);
+    this.commandLog.push({
+      command: { ...command },
+      accepted: true,
+      reason: null,
+      resultingSpeedKph: this.speedKph,
+      resultingInclinePct: this.inclinePct,
+    });
+    return true;
+  }
+
+  stop(tMs: number): void {
+    const command = { tMs, speedKph: 0, inclinePct: 0 };
+    this.speedKph = 0;
+    this.inclinePct = 0;
+    this.commandLog.push({
+      command,
+      accepted: true,
+      reason: "stop",
+      resultingSpeedKph: 0,
+      resultingInclinePct: 0,
+    });
   }
 }
