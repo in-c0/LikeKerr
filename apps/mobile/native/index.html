@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>LikeKerr BLE Diagnostics</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; background:#080b10; color:#f5f7fb; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:radial-gradient(circle at 50% -10%,#1b2738,#080b10 42%); }
+    main { width:min(720px,100%); margin:auto; padding:28px 18px 60px; }
+    h1 { font-size:38px; letter-spacing:-.045em; margin:6px 0; }
+    p { color:#aab5c4; line-height:1.5; }
+    .warning { border:1px solid #594821; background:#221c0e; padding:12px; border-radius:14px; color:#f1dda8; font-size:13px; }
+    .card { margin-top:14px; border:1px solid #202938; border-radius:18px; padding:16px; background:#0e131c; }
+    .label { text-transform:uppercase; letter-spacing:.1em; font-size:11px; color:#8e9aaa; }
+    .value { font-size:40px; font-weight:800; margin:8px 0; }
+    button { width:100%; min-height:48px; border-radius:12px; border:1px solid #344155; background:#182231; color:white; font:inherit; font-weight:700; margin-top:8px; }
+    button.secondary { background:#10161f; }
+    button:disabled { opacity:.45; }
+    pre { white-space:pre-wrap; word-break:break-word; background:#080b10; border-radius:12px; padding:12px; font-size:12px; color:#b9c5d4; max-height:320px; overflow:auto; }
+    .status { color:#91a0b3; font-size:13px; min-height:20px; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="label">M001 hardware diagnostics</div>
+    <h1>LikeKerr BLE</h1>
+    <p>Validate a real heart-rate sensor and inspect an FTMS treadmill before physical actuator testing.</p>
+    <div class="warning"><strong>No treadmill actuation:</strong> this diagnostics build contains no start, speed, incline, or Request Control action.</div>
+
+    <section class="card">
+      <div class="label">Heart-rate sensor</div>
+      <div class="value"><span id="bpm">—</span> <small style="font-size:14px;color:#8e9aaa">bpm</small></div>
+      <div id="hrStatus" class="status">Not connected</div>
+      <button id="connectHr">Connect HR sensor</button>
+      <button id="disconnectHr" class="secondary" disabled>Disconnect HR</button>
+    </section>
+
+    <section class="card">
+      <div class="label">FTMS treadmill — read-only probe</div>
+      <div id="treadmillStatus" class="status" style="margin-top:10px">Not connected</div>
+      <button id="connectTreadmill">Connect treadmill</button>
+      <button id="disconnectTreadmill" class="secondary" disabled>Disconnect treadmill</button>
+      <pre id="gatt">No GATT data yet.</pre>
+    </section>
+
+    <section class="card">
+      <div class="label">Diagnostic log</div>
+      <pre id="log">Ready.</pre>
+    </section>
+  </main>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
