@@ -1,0 +1,63 @@
+name: full-match-trace
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/derive-metrica-full-match.mjs"
+      - ".github/workflows/full-match-trace.yml"
+      - "research/RIP-003-full-match-ingestion.md"
+
+jobs:
+  derive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Download open Metrica Sample Game 1 home tracking
+        run: |
+          mkdir -p .tmp/full-match artifact
+          curl --fail --location --retry 3 \
+            --output .tmp/full-match/metrica-home.csv \
+            "https://raw.githubusercontent.com/metrica-sports/sample-data/master/data/Sample_Game_1/Sample_Game_1_RawTrackingData_Home_Team.csv"
+          test "$(wc -c < .tmp/full-match/metrica-home.csv)" -gt 10000000
+      - name: Derive 1 Hz outfield-player trace
+        run: |
+          node scripts/derive-metrica-full-match.mjs \
+            --input .tmp/full-match/metrica-home.csv \
+            --output artifact/metrica-sample-game-1-home-player2-1hz.csv \
+            --player Player2 \
+            | tee artifact/derivation-summary.json
+      - name: Validate derived trace
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          const csv = await readFile('artifact/metrica-sample-game-1-home-player2-1hz.csv', 'utf8');
+          const lines = csv.trim().split(/\r?\n/);
+          if (lines.length < 4000) throw new Error(`Expected a match-scale trace, received ${lines.length - 1} samples`);
+          let first = null;
+          let last = null;
+          for (const [index, line] of lines.slice(1).entries()) {
+            const [tMs, period, frame, xM, yM, speedMps, effort01] = line.split(',').map(Number);
+            if (![tMs, period, frame, xM, yM, speedMps, effort01].every(Number.isFinite)) {
+              throw new Error(`Non-finite value at derived row ${index + 2}`);
+            }
+            if (speedMps < 0 || speedMps > 12.00001) throw new Error(`Invalid speed ${speedMps}`);
+            if (effort01 < 0 || effort01 > 1.00001) throw new Error(`Invalid effort ${effort01}`);
+            first ??= { tMs, period };
+            last = { tMs, period };
+          }
+          const durationMinutes = (last.tMs - first.tMs) / 60000;
+          if (durationMinutes < 80) throw new Error(`Expected >=80 min coverage, got ${durationMinutes.toFixed(1)} min`);
+          if (first.period !== 1 || last.period !== 2) throw new Error('Trace must span both match periods');
+          console.log(`Validated ${lines.length - 1} samples across ${durationMinutes.toFixed(1)} min`);
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: likekerr-metrica-full-match-player2
+          path: artifact/
+          if-no-files-found: error
+          retention-days: 30
