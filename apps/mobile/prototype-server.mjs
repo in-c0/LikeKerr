@@ -1,5 +1,5 @@
 import http from "node:http";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import {
@@ -14,6 +14,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "../..");
 const htmlPath = join(here, "index.html");
 const tracePath = join(repoRoot, "data/demo/metrica-epts-player11.csv");
+const sessionsDir = join(repoRoot, "var/sessions");
 
 function parseTrace(csv) {
   const [, ...lines] = csv.trim().split(/\r?\n/);
@@ -63,6 +64,8 @@ function createSession(trace) {
   let distanceKm = 0;
   let maxHr = actualHr;
   let maxSpeedKph = 0;
+  let sumHr = 0;
+  let hrSamples = 0;
   const sessionSync = [];
 
   return {
@@ -91,6 +94,8 @@ function createSession(trace) {
       distanceKm += treadmill.speedKph / 3600;
       maxHr = Math.max(maxHr, actualHr);
       maxSpeedKph = Math.max(maxSpeedKph, treadmill.speedKph);
+      sumHr += actualHr;
+      hrSamples += 1;
       if (syncSnapshot.currentSync !== null) sessionSync.push(syncSnapshot.currentSync);
 
       const next = trace[index + 1] ?? null;
@@ -122,30 +127,55 @@ function createSession(trace) {
         },
       };
     },
-    summary() {
+    summary(frameCount = trace.length) {
       const meanSync = sessionSync.length
         ? sessionSync.reduce((sum, value) => sum + value, 0) / sessionSync.length
         : null;
       return {
         type: "summary",
+        elapsedSec: Math.max(0, frameCount - 1),
         distanceKm,
+        averageHrBpm: hrSamples ? sumHr / hrSamples : null,
         maxHrBpm: maxHr,
         maxSpeedKph,
         hrSync: meanSync,
-        sourceFrames: trace.length,
+        sourceFrames: frameCount,
       };
     },
   };
 }
 
+async function persistSession(frames, summary, status) {
+  await mkdir(sessionsDir, { recursive: true });
+  const id = new Date().toISOString().replace(/[:.]/g, "-");
+  const filename = `${id}-${status}.json`;
+  const payload = {
+    schemaVersion: 1,
+    createdAt: new Date().toISOString(),
+    status,
+    source: "Metrica EPTS / Kloppy fixture, anonymised Home Player11",
+    measured: ["source.position", "source.speed"],
+    simulated: ["actualHrBpm", "treadmill"],
+    frames,
+    summary,
+  };
+  await writeFile(join(sessionsDir, filename), `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  return `var/sessions/${filename}`;
+}
+
 async function buildSelfTestFrame() {
   const trace = parseTrace(await readFile(tracePath, "utf8"));
   if (trace.length < 2) throw new Error("Accessible demo trace is too short");
-  const frame = createSession(trace).step(trace[0], 0);
+  const session = createSession(trace);
+  const frame = session.step(trace[0], 0);
   if (!Number.isFinite(frame.targetHrBpm) || !Number.isFinite(frame.actualHrBpm)) {
     throw new Error("Accessible demo produced invalid HR state");
   }
-  return { tracePoints: trace.length, firstFrame: frame };
+  const summary = session.summary(1);
+  if (!Number.isFinite(summary.maxSpeedKph) || !Number.isFinite(summary.averageHrBpm)) {
+    throw new Error("Accessible demo produced invalid summary state");
+  }
+  return { tracePoints: trace.length, firstFrame: frame, summary };
 }
 
 if (process.argv.includes("--self-test")) {
@@ -172,24 +202,37 @@ const server = http.createServer((req, res) => {
     });
 
     const session = createSession(trace);
+    const frames = [];
     let index = 0;
     let timer = null;
+    let finished = false;
     const send = (payload) => res.write(`data: ${JSON.stringify(payload)}\n\n`);
 
-    const tick = () => {
+    const tick = async () => {
       if (index >= trace.length) {
-        send(session.summary());
+        const summary = session.summary(frames.length);
+        const telemetryPath = await persistSession(frames, summary, "completed");
+        finished = true;
+        send({ ...summary, telemetryPath });
         res.end();
         return;
       }
-      send(session.step(trace[index], index));
+      const frame = session.step(trace[index], index);
+      frames.push(frame);
+      send(frame);
       index += 1;
-      timer = setTimeout(tick, 1000);
+      timer = setTimeout(() => void tick(), 1000);
     };
 
-    tick();
+    void tick();
     req.on("close", () => {
       if (timer) clearTimeout(timer);
+      if (!finished && frames.length) {
+        const summary = session.summary(frames.length);
+        void persistSession(frames, summary, "interrupted").catch((error) => {
+          console.error("Failed to persist interrupted LikeKerr session", error);
+        });
+      }
     });
     return;
   }
