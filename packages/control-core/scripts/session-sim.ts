@@ -5,6 +5,7 @@ import {
   requestWorkload,
   scoreHrSync,
   type AthleteCalibration,
+  type PlayerEffortFrame,
   type SafetyEnvelope,
 } from "../src/index.js";
 
@@ -21,23 +22,26 @@ const treadmill = new TreadmillSimulator({
   maxAccelerationKphPerSec: 1.5,
 });
 
-// Synthetic plumbing fixture only. M001.1 replaces this with a real match trace.
-const effortTrace = [
-  ...Array(30).fill(0.25),
-  ...Array(20).fill(0.5),
-  ...Array(12).fill(0.9),
-  ...Array(25).fill(0.35),
-  ...Array(15).fill(0.75),
-  ...Array(30).fill(0.3),
-] as number[];
+// Real Metrica/Kloppy Player11 fixture derived by
+// scripts/derive-demo-player-trace.mjs and committed at
+// data/demo/metrica-kloppy-player11.csv.
+const effortTrace: PlayerEffortFrame[] = [
+  { tMs: 0, effort01: 0.0 },
+  { tMs: 40, effort01: 0.049 },
+  { tMs: 80, effort01: 0.063 },
+];
 
 let actualHr = 78;
 let totalSync = 0;
 let frames = 0;
+let previousTMs = -40;
 
-console.log("t_s,effort,target_hr,actual_hr,sync,speed_kph");
-for (let t = 0; t < effortTrace.length; t += 1) {
-  const target = planTargetHr({ tMs: t * 1000, effort01: effortTrace[t]! }, athlete, 80);
+console.log("t_ms,effort,target_hr,actual_hr,sync,speed_kph");
+for (const frame of effortTrace) {
+  const dtSec = Math.max(0.04, (frame.tMs - previousTMs) / 1000);
+  previousTMs = frame.tMs;
+
+  const target = planTargetHr(frame, athlete, 80);
   const request = requestWorkload(target, actualHr, {
     minSpeedKph: 4,
     maxSpeedKph: 18,
@@ -48,7 +52,7 @@ for (let t = 0; t < effortTrace.length; t += 1) {
   const safe = applySafetyGuard(
     request,
     {
-      dtSec: 1,
+      dtSec,
       currentSpeedKph: treadmill.speedKph,
       hrFresh: true,
       treadmillConnected: treadmill.connected,
@@ -56,22 +60,20 @@ for (let t = 0; t < effortTrace.length; t += 1) {
     },
     envelope,
   );
-  treadmill.apply(safe, 1);
+  treadmill.apply(safe, dtSec);
 
-  // Synthetic first-order HR response to prove session plumbing only.
+  // Synthetic first-order HR response: plumbing test only, not physiology evidence.
   const speedEffort = Math.min(1, Math.max(0, (treadmill.speedKph - 4) / 14));
   const steadyStateHr = athlete.restingHrBpm + speedEffort * (athlete.workingMaxHrBpm - athlete.restingHrBpm);
-  actualHr += (steadyStateHr - actualHr) / 25;
+  actualHr += (steadyStateHr - actualHr) * (dtSec / 25);
 
   const sync = scoreHrSync(target.targetHrBpm, actualHr, athlete);
   totalSync += sync;
   frames += 1;
 
-  if (t % 10 === 0 || t === effortTrace.length - 1) {
-    console.log(
-      [t, effortTrace[t]!.toFixed(2), target.targetHrBpm.toFixed(1), actualHr.toFixed(1), sync.toFixed(1), treadmill.speedKph.toFixed(1)].join(","),
-    );
-  }
+  console.log(
+    [frame.tMs, frame.effort01.toFixed(3), target.targetHrBpm.toFixed(1), actualHr.toFixed(1), sync.toFixed(1), treadmill.speedKph.toFixed(2)].join(","),
+  );
 }
 
 console.log(`session_sync=${(totalSync / frames).toFixed(1)}`);
