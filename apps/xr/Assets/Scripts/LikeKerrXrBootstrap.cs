@@ -64,8 +64,12 @@ namespace LikeKerr.XR
 
         private static string ResolveEndpoint()
         {
-            // Desktop/editor default. On Quest, pass the host PC's LAN endpoint with:
-            //   -likekerrEndpoint http://192.168.x.x:4174/events
+            var environmentEndpoint = System.Environment.GetEnvironmentVariable("LIKEKERR_ENDPOINT");
+            if (!string.IsNullOrWhiteSpace(environmentEndpoint))
+            {
+                return environmentEndpoint;
+            }
+
             var args = System.Environment.GetCommandLineArgs();
             for (var i = 0; i < args.Length - 1; i++)
             {
@@ -75,6 +79,8 @@ namespace LikeKerr.XR
                 }
             }
 
+            // Desktop editor / PC VR default. Standalone XR should explicitly use
+            // the trusted-LAN demo:xr endpoint rather than relying on discovery.
             return "http://127.0.0.1:4173/events";
         }
     }
