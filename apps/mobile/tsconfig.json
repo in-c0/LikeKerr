@@ -10,6 +10,7 @@
   },
   "include": [
     "src/**/*.ts",
+    "native/src/**/*.ts",
     "../../packages/control-core/src/**/*.ts"
   ]
 }
