@@ -39,11 +39,13 @@ const envelope: SafetyEnvelope = {
   maxInclinePct: 10,
   maxAccelerationKphPerSec: 2,
   recoverySpeedKph: 5,
+  maxCommandAgeMs: 500,
 };
 
 const guarded = applySafetyGuard(
-  { speedKph: 20, inclinePct: 12 },
+  { tMs: 1_000, speedKph: 20, inclinePct: 12 },
   {
+    nowMs: 1_000,
     dtSec: 1,
     currentSpeedKph: 8,
     hrFresh: true,
@@ -58,8 +60,9 @@ assert(guarded.reasons.includes("speed-envelope"), "speed limit reason should be
 assert(guarded.reasons.includes("acceleration-envelope"), "acceleration limit reason should be reported");
 
 const staleHr = applySafetyGuard(
-  { speedKph: 12, inclinePct: 0 },
+  { tMs: 2_000, speedKph: 12, inclinePct: 0 },
   {
+    nowMs: 2_000,
     dtSec: 10,
     currentSpeedKph: 8,
     hrFresh: false,
@@ -70,9 +73,25 @@ const staleHr = applySafetyGuard(
 );
 assert(staleHr.speedKph === 5, "stale HR should force recovery-speed ceiling");
 
-const stopped = applySafetyGuard(
-  { speedKph: 12, inclinePct: 5 },
+const staleController = applySafetyGuard(
+  { tMs: 2_000, speedKph: 12, inclinePct: 0 },
   {
+    nowMs: 2_700,
+    dtSec: 1,
+    currentSpeedKph: 8,
+    hrFresh: true,
+    treadmillConnected: true,
+    userStop: false,
+  },
+  envelope,
+);
+assert(staleController.speedKph === 0, "stale controller command should fail closed");
+assert(staleController.reasons.includes("stale-controller-command"), "stale controller reason should be reported");
+
+const stopped = applySafetyGuard(
+  { tMs: 3_000, speedKph: 12, inclinePct: 5 },
+  {
+    nowMs: 3_000,
     dtSec: 1,
     currentSpeedKph: 8,
     hrFresh: true,
@@ -88,7 +107,7 @@ const simulator = new TreadmillSimulator({
   maxInclinePct: 12,
   maxAccelerationKphPerSec: 3,
 });
-simulator.apply({ speedKph: 12, inclinePct: 4 }, 1);
+simulator.apply({ tMs: 4_000, speedKph: 12, inclinePct: 4 }, 1);
 assert(simulator.speedKph === 3, "simulator should respect acceleration capability");
 assert(simulator.inclinePct === 4, "simulator should apply safe incline");
 
