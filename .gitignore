@@ -1,4 +1,7 @@
 node_modules/
 packages/control-core/dist/
+apps/mobile/native/dist/
+android/
+ios/
 var/sessions/
 .DS_Store
