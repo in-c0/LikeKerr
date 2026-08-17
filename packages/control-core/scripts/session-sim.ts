@@ -15,6 +15,7 @@ const envelope: SafetyEnvelope = {
   maxInclinePct: 8,
   maxAccelerationKphPerSec: 1.5,
   recoverySpeedKph: 5,
+  maxCommandAgeMs: 500,
 };
 const treadmill = new TreadmillSimulator({
   maxSpeedKph: 18,
@@ -52,6 +53,7 @@ for (const frame of effortTrace) {
   const safe = applySafetyGuard(
     request,
     {
+      nowMs: frame.tMs,
       dtSec,
       currentSpeedKph: treadmill.speedKph,
       hrFresh: true,
