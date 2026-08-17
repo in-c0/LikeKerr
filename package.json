@@ -1,0 +1,12 @@
+{
+  "name": "likekerr",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p packages/control-core/tsconfig.json",
+    "test": "npm run build && node packages/control-core/dist/scripts/smoke.js"
+  },
+  "devDependencies": {
+    "typescript": "5.8.3"
+  }
+}
