@@ -1,0 +1,4 @@
+node_modules/
+packages/control-core/dist/
+var/sessions/
+.DS_Store
