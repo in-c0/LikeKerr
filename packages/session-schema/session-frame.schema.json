@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LikeKerrSessionFrame",
+  "type": "object",
+  "required": ["t_ms", "player_effort", "target_hr_bpm", "actual_hr_bpm", "hr_sync", "treadmill"],
+  "properties": {
+    "t_ms": {"type": "integer", "minimum": 0},
+    "player_effort": {"type": "number", "minimum": 0, "maximum": 1},
+    "target_hr_bpm": {"type": "number"},
+    "actual_hr_bpm": {"type": "number"},
+    "hr_sync": {"type": "number", "minimum": 0, "maximum": 100},
+    "treadmill": {
+      "type": "object",
+      "required": ["requested_speed_kph", "actual_speed_kph"],
+      "properties": {
+        "requested_speed_kph": {"type": "number", "minimum": 0},
+        "actual_speed_kph": {"type": "number", "minimum": 0},
+        "requested_incline_pct": {"type": "number"},
+        "actual_incline_pct": {"type": "number"}
+      }
+    },
+    "safety": {
+      "type": "object",
+      "properties": {
+        "limited": {"type": "boolean"},
+        "reason": {"type": ["string", "null"]}
+      }
+    }
+  }
+}
