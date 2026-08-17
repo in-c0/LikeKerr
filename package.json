@@ -7,6 +7,7 @@
     "test": "npm run build && node packages/control-core/dist/scripts/smoke.js && node packages/control-core/dist/scripts/ble-smoke.js && node packages/control-core/dist/scripts/ftms-smoke.js && node packages/control-core/dist/scripts/sync-safety-smoke.js && node apps/mobile/prototype-server.mjs --self-test",
     "sim": "npm run build && node packages/control-core/dist/scripts/session-sim.js",
     "demo:accessible": "npm run build && node apps/mobile/prototype-server.mjs",
+    "demo:xr": "npm run build && node apps/mobile/lan-proxy.mjs",
     "derive:demo": "node scripts/derive-demo-player-trace.mjs"
   },
   "devDependencies": {
