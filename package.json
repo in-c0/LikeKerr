@@ -5,7 +5,8 @@
   "scripts": {
     "build": "tsc -p packages/control-core/tsconfig.json",
     "test": "npm run build && node packages/control-core/dist/scripts/smoke.js",
-    "sim": "npm run build && node packages/control-core/dist/scripts/session-sim.js"
+    "sim": "npm run build && node packages/control-core/dist/scripts/session-sim.js",
+    "derive:demo": "node scripts/derive-demo-player-trace.mjs"
   },
   "devDependencies": {
     "typescript": "5.8.3"
